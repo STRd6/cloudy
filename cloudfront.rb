@@ -1,12 +1,14 @@
 require "fog"
 require "pry"
 
-# Create a cloudfront distribution for a bucket
+# TODO: Create bucket
+# TODO: Enable static website hosting on bucket
 
 bucket = "projects.pixieengine.com"
 domain = "projects.pixieengine.com"
 comment = "PixieEngine Projects Archive"
 
+# Create a cloudfront distribution for a bucket hosting a static website
 def create_cdn(bucket, comment, domain)
   puts "Creating client..."
 
@@ -16,46 +18,50 @@ def create_cdn(bucket, comment, domain)
     :aws_secret_access_key  => ENV["AWS_SECRET_ACCESS_KEY"]
   })
 
-  bucket_domain = "#{bucket}.s3.amazonaws.com"
+  bucket_domain = "#{bucket}.s3-website-us-east-1.amazonaws.com"
   puts "Creating distribution\n#{bucket_domain} -> #{domain}\n#{comment}"
 
   data = cdn.post_distribution({
     "Enabled" => true,
     "CNAME" => domain,
     "Comment" => comment,
-    "S3Origin" => {
-      'DNSName' => bucket_domain
+    "CustomOrigin" => {
+      'DNSName' => bucket_domain,
+      'OriginProtocolPolicy' => 'match-viewer'
     }
   })
 
-  cdn_domain_name   = data.body['DomainName']
+  cdn_domain_name = data.body['DomainName']
 
   puts "Created #{cdn_domain_name}"
 
-  return cdn_domain_name
+  return {
+    "DNSName" => cdn_domain_name,
+    "HostedZoneId" => "Z2FDTNDATAQYW2"
+  }
 end
 
-def create_alias(cdn_domain_name, domain)
+# Create a DNS alias record for the cloudfront domain
+def create_alias(alias_target, domain)
   dns = Fog::DNS.new({
     :provider     => 'AWS',
     :aws_access_key_id => ENV["AWS_ACCESS_KEY_ID"],
     :aws_secret_access_key => ENV["AWS_SECRET_ACCESS_KEY"]
   })
 
-  # TODO: Get zone by base domain
+  # TODO: Get or create zone by base domain
   zone = dns.zones.first
 
   puts "Creating DNS alias"
 
   record = zone.records.create(
-    :value   => cdn_domain_name,
     :name => domain,
-    :type => 'CNAME'
+    :alias_target => alias_target,
+    :type => 'A'
   )
 
-  puts "#{domain} CNAME #{cdn_domain_name}"
-
-  binding.pry
+  puts "#{domain} -> #{alias_target["DNSName"]}"
 end
 
-# create_alias "d2hbj2zpp4a9op.cloudfront.net", domain
+# alias_target = create_cdn(bucket, comment, domain)
+# create_alias alias_target, domain
